@@ -4,7 +4,7 @@ from unittest import skipIf
 
 from germanium.tools import assert_dict_equal, assert_equal, assert_not_equal, assert_raises
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import TestCase
 
@@ -29,6 +29,8 @@ from .data import (
     CUSTOMER__PERSONAL_ID, CUSTOMER__PHONE_NUMBER, PAYMENT__VALUE
 )
 from .utils import AnonymizedDataMixin, NotImplementedMixin
+
+User = get_user_model()
 
 
 class TestModelAnonymization(AnonymizedDataMixin, NotImplementedMixin, TestCase):
