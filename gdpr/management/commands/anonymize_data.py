@@ -2,8 +2,8 @@ import math
 
 import pyprind
 from django.core.management.base import BaseCommand
-from utils import chunked_iterator, chunked_queryset_iterator
-from utils.commands import ProgressBarStream
+from ...utils import chunked_iterator, chunked_queryset_iterator
+from ...utils import ProgressBarStream
 
 from gdpr.anonymizers import DeleteModelAnonymizer
 from gdpr.loading import anonymizer_register
@@ -13,17 +13,28 @@ class Command(BaseCommand):
     help = 'Anonymize database data according to defined anonymizers in applications.'
 
     def add_arguments(self, parser):
-        parser.add_argument('--models', type=str, action='store', dest='models',
-                            help='name of the anonymized models ("app_name.model_name") separated by a comma.')
+        parser.add_argument(
+            '--models',
+            type=str,
+            action='store',
+            dest='models',
+            help=(
+                'name of the anonymized models ("app_name.model_name") separated by a'
+                ' comma.'
+            ),
+        )
 
     def _anonymize_by_qs(self, obj_anonymizer, qs):
         bar = pyprind.ProgBar(
             max(math.ceil(qs.count() // obj_anonymizer.chunk_size), 1),
             title='Anonymize model {}'.format(self._get_full_model_name(qs.model)),
-            stream=ProgressBarStream(self.stdout)
+            stream=ProgressBarStream(self.stdout),
         )
-        for batch_qs in chunked_queryset_iterator(qs, obj_anonymizer.chunk_size, delete_qs=isinstance(
-                obj_anonymizer, DeleteModelAnonymizer)):
+        for batch_qs in chunked_queryset_iterator(
+            qs,
+            obj_anonymizer.chunk_size,
+            delete_qs=isinstance(obj_anonymizer, DeleteModelAnonymizer),
+        ):
             obj_anonymizer().anonymize_qs(batch_qs)
             bar.update()
 
@@ -31,7 +42,7 @@ class Command(BaseCommand):
         bar = pyprind.ProgBar(
             qs.count(),
             title='Anonymize model {}'.format(self._get_full_model_name(qs.model)),
-            stream=ProgressBarStream(self.stdout)
+            stream=ProgressBarStream(self.stdout),
         )
         for obj in chunked_iterator(qs, obj_anonymizer.chunk_size):
             obj_anonymizer().anonymize_obj(obj)

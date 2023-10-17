@@ -1,7 +1,71 @@
+from itertools import count
 from typing import Any, List, Type
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Model, QuerySet
+
+
+def chunked_iterator(iterable, chunk_size):
+    """Given a slice-able yield individual items but consume them in chunk_size
+    batches so we can e.g. retrieve records from Solr in 50-100 batches
+    rather than the default 10
+    Note that unlike the itertools grouper example we must use slice notation
+    to trigger things like Haystack's sliced __getitem__ to set our own batch
+    size
+    """
+
+    for i in count():
+        start = i * chunk_size
+
+        chunk = iterable[start : start + chunk_size]
+
+        for j in chunk:
+            yield j
+
+        if len(chunk) < chunk_size:
+            break  # We're at the last page of results
+
+
+def chunked_queryset(queryset, chunk_size):
+    """Slice a queryset into chunks."""
+
+    start_pk = 0
+    queryset = queryset.order_by('pk')
+
+    while True:
+        # No entry left
+        if not queryset.filter(pk__gt=start_pk).exists():
+            break
+
+        try:
+            # Fetch chunk_size entries if possible
+            end_pk = queryset.filter(pk__gt=start_pk).values_list('pk', flat=True)[
+                chunk_size - 1
+            ]
+
+            # Fetch rest entries if less than chunk_size left
+        except IndexError:
+            end_pk = queryset.values_list('pk', flat=True).last()
+
+        yield queryset.filter(pk__gt=start_pk).filter(pk__lte=end_pk)
+
+        start_pk = end_pk
+
+
+class ProgressBarStream:
+    """OutputStream wrapper to remove default linebreak at line endings."""
+
+    def __init__(self, stream):
+        """Wrap the given stream."""
+        self.stream = stream
+
+    def write(self, *args, **kwargs):
+        """Call the stream's write method without linebreaks at line endings."""
+        return self.stream.write(ending="", *args, **kwargs)
+
+    def flush(self):
+        """Call the stream's flush method without any extra arguments."""
+        return self.stream.flush()
 
 
 def str_to_class(class_string: str) -> Any:
@@ -72,6 +136,7 @@ def get_reversion_local_field_dict(obj):
 def is_reversion_installed():
     try:
         import reversion
+
         return True
     except ImportError:
         return False
@@ -81,8 +146,10 @@ def get_all_parent_objects(obj: Model) -> List[Model]:
     """Return all model parent instances."""
     parent_paths = [
         [path_info.join_field.name for path_info in parent_path]
-        for parent_path in
-        [obj._meta.get_path_to_parent(parent_model) for parent_model in obj._meta.get_parent_list()]
+        for parent_path in [
+            obj._meta.get_path_to_parent(parent_model)
+            for parent_model in obj._meta.get_parent_list()
+        ]
     ]
 
     parent_objects = []
@@ -99,9 +166,15 @@ def get_all_obj_and_parent_versions_queryset_list(obj: Model) -> List[QuerySet]:
     """Return list of object and its parent version querysets"""
     from gdpr.utils import get_reversion_versions
 
-    return [get_reversion_versions(i) for i in get_all_parent_objects(obj)] + [get_reversion_versions(obj)]
+    return [get_reversion_versions(i) for i in get_all_parent_objects(obj)] + [
+        get_reversion_versions(obj)
+    ]
 
 
 def get_all_obj_and_parent_versions(obj: Model) -> List[Model]:
     """Return list of all object and its parent versions"""
-    return [item for sublist in get_all_obj_and_parent_versions_queryset_list(obj) for item in sublist]
+    return [
+        item
+        for sublist in get_all_obj_and_parent_versions_queryset_list(obj)
+        for item in sublist
+    ]
